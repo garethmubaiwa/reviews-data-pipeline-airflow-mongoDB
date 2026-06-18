@@ -1,13 +1,8 @@
-// Database: tiktok_reviews
-// Collection: processed_reviews
-//
-// Run these in MongoDB Compass under the Aggregations tab,
-// or paste directly into mongosh after selecting the database:
-//   use tiktok_reviews
+/*
+R
+*/
 
-// ─────────────────────────────────────────────────────────────
 // 1. Top 5 most frequently occurring comments
-// ─────────────────────────────────────────────────────────────
 
 db.processed_reviews.aggregate([
   {
@@ -24,10 +19,7 @@ db.processed_reviews.aggregate([
   }
 ]);
 
-
-// ─────────────────────────────────────────────────────────────
 // 2. All entries where the content field is fewer than 5 characters
-// ─────────────────────────────────────────────────────────────
 
 db.processed_reviews.aggregate([
   {
@@ -45,10 +37,7 @@ db.processed_reviews.aggregate([
   }
 ]);
 
-
-// ─────────────────────────────────────────────────────────────
 // 3. Average rating for each day (result in timestamp type)
-// ─────────────────────────────────────────────────────────────
 
 db.processed_reviews.aggregate([
   {

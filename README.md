@@ -53,7 +53,7 @@ data/tiktok_google_play_reviews.csv
 
 The dataset can be downloaded from [Google Drive](https://drive.google.com/file/d/1crEUrJMn3XI4ukzlTN8r0ZAzdOVYhpNq/view).
 
-Rename `_env` to `.env` in the project root. It contains a single variable:
+`.env` in the project root contains a single variable:
 
 ```
 AIRFLOW_UID=50000
