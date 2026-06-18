@@ -9,16 +9,20 @@ x-airflow-common: &airflow-common
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW_CONN_MONGO_DEFAULT: 'mongodb://root:example@mongodb:27017/'
+    MONGO_URI: ${MONGO_URI}
+    MONGO_DB_NAME: ${MONGO_DB_NAME}
+    MONGO_COLLECTION: ${MONGO_COLLECTION}
+    MONGO_TEMP_COLLECTION: ${MONGO_TEMP_COLLECTION}
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
     - ./data:/opt/airflow/data
+    - ./scripts:/opt/airflow/scripts
   depends_on: &airflow-common-depends-on
     postgres:
       condition: service_healthy
 
 services:
-
   postgres:
     image: postgres:15
     environment:
@@ -65,8 +69,6 @@ services:
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
-    # Runs as the default airflow user (uid 50000) — has airflow in PATH.
-    # No user: "0:0" override. No chown needed on Windows/Docker Desktop.
     command:
       - -c
       - |
