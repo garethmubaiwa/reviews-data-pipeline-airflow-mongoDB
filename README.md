@@ -1,119 +1,166 @@
 # TikTok Reviews Data Pipeline
 
-A local data pipeline built with Apache Airflow and MongoDB that processes TikTok Google Play reviews and loads them into a document store. The project was developed as a practical exercise in orchestration, data-aware scheduling, and containerised infrastructure.
+This project implements a local data pipeline using Apache Airflow and MongoDB to process and store TikTok Google Play reviews. It was developed during an internship at Innowise by Gareth Mubaiwa.
+
+The pipeline demonstrates workflow orchestration, conditional branching, task grouping, and dataset-driven scheduling within a fully containerized environment.
+
+---
 
 ## Overview
 
-The pipeline is split across two DAGs. The first handles ingestion and transformation of the raw review data. The second is triggered automatically when the first completes, and is responsible for loading the processed output into MongoDB. Communication between the two DAGs is handled through Airflow's Dataset scheduling mechanism rather than explicit dependencies, which keeps them decoupled.
+The system consists of two independent Airflow DAGs:
 
-The entire environment runs locally via Docker Compose and requires no external services.
+* **`dag1_process`**
+  Handles ingestion, validation, and transformation of raw CSV data.
+
+* **`dag2_load_mongo`**
+  Triggered automatically via Airflow Datasets and loads processed data into MongoDB.
+
+The DAGs are decoupled using dataset-based scheduling rather than direct dependencies.
+
+---
 
 ## Architecture
 
 ```
-tiktok_google_play_reviews.csv
-        |
-   [FileSensor]
-        |
- [check_empty_file]
-      /         \
-[log_empty]   [TaskGroup: transform_group]
-                  |
-            [replace_nulls]
-                  |
-            [sort_by_date]
-                  |
-            [clean_content] --> emits Dataset
-                                      |
-                              [dag2_load_mongo]
-                                      |
-                                  [MongoDB]
+                      /---> [log_empty_file]
+[wait_for_file] ---> [branch_check_size]
+                      \---> [transform_group]
+                                  |
+                                  v
+                        [step_replace_nulls]
+                                  |
+                                  v
+                        [step_sort_by_date]
+                                  |
+                                  v
+                        [step_clean_content]
+                                  |
+                                  v
+                             (Dataset)
+                                  |
+                                  v
+                        [dag2_load_mongo]
+                                  |
+                                  v
+                              [MongoDB]
 ```
 
-## Stack
+---
 
-- Apache Airflow 2.9.2 (LocalExecutor)
-- MongoDB 7.0
-- PostgreSQL 15 (Airflow metadata database)
-- Python 3.12 with pandas
-- Docker Compose
+## Tech Stack
 
-## Prerequisites
+* Apache Airflow 2.9.2 (LocalExecutor)
+* MongoDB 7.0
+* PostgreSQL 15
+* Python 3.12 (pandas)
+* Docker Compose
 
-- Docker Desktop installed and running
-- Git
+---
 
 ## Setup
 
-Clone the repository and place the dataset in the `data/` directory:
+1. Clone the repository
+
+2. Add dataset:
 
 ```
 data/tiktok_google_play_reviews.csv
 ```
 
-The dataset can be downloaded from [Google Drive](https://drive.google.com/file/d/1crEUrJMn3XI4ukzlTN8r0ZAzdOVYhpNq/view).
-
-`.env` in the project root contains a single variable:
+3. Create `.env`:
 
 ```
 AIRFLOW_UID=50000
 ```
 
-## Running the project
+---
 
-Build the custom Airflow image:
+## Configuration
+
+Defined in `config.py`:
+
+```python
+MONGO_URI = "mongodb://mongo:27017"
+DB_NAME = "tiktok_reviews"
+COLLECTION = "processed_reviews"
+TEMP_COLLECTION = "processed_reviews_tmp"
+
+INPUT_FILE = "/opt/airflow/data/tiktok_google_play_reviews.csv"
+OUTPUT_FILE = "/opt/airflow/data/processed_reviews.csv"
+```
+
+---
+
+## Run
 
 ```bash
 docker compose build --no-cache
-```
-
-Initialise the database and create the admin user:
-
-```bash
 docker compose up airflow-init
-```
-
-Wait for the container to exit with code 0, then start all services:
-
-```bash
 docker compose up -d
 ```
 
-The Airflow UI will be available at `http://localhost:8080`. Log in with `admin` / `admin`.
-Mongo Express runs at `http://localhost:8081` and requires no authentication.
+---
 
-Before triggering the pipeline, create the filesystem connection that the FileSensor depends on. In the Airflow UI, navigate to Admin > Connections, add a new record with Conn Id `fs_default` and Conn Type `File (path)`, and leave all other fields empty.
+## Access
 
-## Running the pipeline
+* Airflow: http://localhost:8080 (admin / admin)
+* Mongo Express: http://localhost:8081
 
-In the Airflow UI, navigate to DAGs and ensure both `dag1_process` and `dag2_load_mongo` are unpaused. Trigger `dag1_process` manually using the run button. Once the transformation tasks complete, `dag2_load_mongo` will be triggered automatically via the Dataset outlet on the `clean_content` task.
+---
 
-Processed records can be inspected in Mongo Express under the `tiktok_reviews` database, `processed_reviews` collection.
+## Airflow Setup
 
-## DAG reference
+Create connection:
+
+* Conn Id: `fs_default`
+* Conn Type: `File (path)`
+
+---
+
+## Pipeline Flow
+
+1. File is detected using `FileSensor`
+2. Branching logic checks if file is empty
+3. If empty → logs and stops
+4. If valid → transformations run inside a TaskGroup:
+   * Replace null values with `"-"`
+   * Sort by date (`at` column)
+   * Clean text content
+5. Dataset is emitted
+6. Second DAG loads data into MongoDB
+
+---
+
+## DAG Tasks
 
 ### dag1_process
 
-| Task | Type | Description |
-|---|---|---|
-| wait_for_file | FileSensor | Waits for the input CSV to appear in `data/` |
-| check_empty_file | BranchPythonOperator | Routes to transform group or empty file log |
-| log_empty_file | BashOperator | Logs that the file is empty and halts |
-| transform_group.replace_nulls | PythonOperator | Replaces NaN and string null values with `-` |
-| transform_group.sort_by_date | PythonOperator | Sorts records by the `at` column ascending |
-| transform_group.clean_content | PythonOperator | Removes emojis and special characters from `content` |
+* `wait_for_file` (FileSensor)
+* `branch_check_size` (BranchPythonOperator)
+* `log_empty_file` (BashOperator)
+* `transform_group.step_replace_nulls`
+* `transform_group.step_sort_by_date`
+* `transform_group.step_clean_content`
 
 ### dag2_load_mongo
 
-| Task | Type | Description |
-|---|---|---|
-| load_to_mongo | PythonOperator | Reads processed CSV and inserts records into MongoDB |
+* `load_to_mongo`
 
-## MongoDB queries
+---
 
-Once data is loaded, the following aggregation queries can be run in MongoDB Compass under the Aggregations tab.
+## Data Notes
 
-Top 5 most frequently occurring comments:
+* Missing values are replaced with `"-"`
+* Data is sorted chronologically
+* Text is cleaned (special characters removed)
+* Dates are stored in MongoDB as native datetime values
+
+---
+
+## Example Queries
+
+**Top 5 comments**
 
 ```javascript
 [
@@ -123,7 +170,7 @@ Top 5 most frequently occurring comments:
 ]
 ```
 
-All entries where the content field is fewer than 5 characters:
+**Short content (<5 chars)**
 
 ```javascript
 [
@@ -132,7 +179,7 @@ All entries where the content field is fewer than 5 characters:
 ]
 ```
 
-Average rating per day as a timestamp:
+**Average rating per day**
 
 ```javascript
 [
@@ -146,18 +193,34 @@ Average rating per day as a timestamp:
 ]
 ```
 
-## Project structure
+---
+
+## Project Structure
 
 ```
 .
 ├── dags/
 │   ├── dag1_process.py
 │   └── dag2_load_mongo.py
-├── data/                  # mounted into the Airflow containers, git-ignored
-├── logs/                  # git-ignored
+├── data/
+├── logs/
 ├── config.py
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
 └── README.md
 ```
+
+---
+
+## Summary
+
+This project demonstrates a practical Airflow pipeline with:
+
+* Conditional branching
+* Task grouping
+* Dataset-based scheduling
+* Clean data transformation
+* MongoDB integration
+
+It reflects production-oriented design principles in a local development setup.
